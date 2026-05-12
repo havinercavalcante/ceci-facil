@@ -1,0 +1,258 @@
+{% extends "filas/base.html" %}
+{% load filas_extras %}
+
+{% block title %}Dashboard — CeciFácil{% endblock %}
+{% block subtitulo %}Painel da Diretoria{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- Cabeçalho + Seletor de período -->
+<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+        <h2 class="text-2xl font-bold text-gray-800">Dashboard{% if upa_diretor %} — {{ upa_diretor.nome }}{% endif %}</h2>
+        <p class="text-sm text-gray-400 mt-0.5">
+            {% if periodo == 'hoje' %}Hoje, {{ hoje|date:"d \d\e F \d\e Y" }}
+            {% elif periodo == 'semana' %}{{ inicio|date:"d/m" }} — {{ hoje|date:"d/m/Y" }}
+            {% elif periodo == 'mes' %}{{ inicio|date:"F \d\e Y" }}
+            {% else %}{{ inicio|date:"Y" }}{% endif %}
+        </p>
+    </div>
+    <div class="flex bg-gray-100 rounded-xl p-1 gap-1 self-start sm:self-auto">
+        {% for p, label in periodos %}
+        <a href="?periodo={{ p }}"
+           class="px-3 py-2 rounded-lg text-sm font-semibold transition whitespace-nowrap
+                  {% if periodo == p %}bg-white shadow text-primary{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Cards de métricas -->
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+    <div class="bg-primary rounded-2xl p-4 text-white col-span-1">
+        <p class="text-xs text-blue-200 font-medium uppercase tracking-wide mb-1">Atendidos</p>
+        <p class="text-3xl font-bold">{{ total_atendidos }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-2xl p-4 text-white">
+        <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Registrados</p>
+        <p class="text-3xl font-bold">{{ total_registrados }}</p>
+    </div>
+    <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+        <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Aguardando</p>
+        <p class="text-3xl font-bold text-yellow-500">{{ aguardando_agora }}</p>
+    </div>
+    <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+        <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Em atend.</p>
+        <p class="text-3xl font-bold text-green-500">{{ em_atendimento }}</p>
+    </div>
+    <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+        <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Ausentes</p>
+        <p class="text-3xl font-bold text-red-400">{{ total_ausentes }}</p>
+    </div>
+    <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+        <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Tempo médio</p>
+        <p class="text-3xl font-bold text-primary">{{ tempo_medio }}<span class="text-base font-normal text-gray-400">min</span></p>
+    </div>
+</div>
+
+<!-- Gráficos principais -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+
+    <!-- Donut: por tipo -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="text-sm font-bold text-gray-700 mb-4">Atendimentos por serviço</h3>
+        <div class="relative h-52">
+            <canvas id="chartTipo"></canvas>
+        </div>
+    </div>
+
+    <!-- Bar: por UPA -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="text-sm font-bold text-gray-700 mb-4">Atendimentos por UPA</h3>
+        <div class="relative h-52">
+            <canvas id="chartUpa"></canvas>
+        </div>
+    </div>
+
+    <!-- Line: por hora -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="text-sm font-bold text-gray-700 mb-4">Movimentação hoje (por hora)</h3>
+        <div class="relative h-52">
+            <canvas id="chartHora"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Tendência por dia (só aparece em semana/mês/ano) -->
+{% if tendencia_labels != "[]" %}
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
+    <h3 class="text-sm font-bold text-gray-700 mb-4">Tendência de atendimentos</h3>
+    <div class="relative h-48">
+        <canvas id="chartTendencia"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- Tabela por UPA × Tipo -->
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
+        <h3 class="text-sm font-bold text-gray-700">Detalhamento por UPA e serviço</h3>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-100">
+                    <th class="text-left px-5 py-3 text-gray-500 font-semibold">UPA</th>
+                    {% for codigo, nome in tipos %}
+                    <th class="text-center px-3 py-3 text-gray-500 font-semibold">
+                        {% if codigo == 'consulta' %}🩺{% endif %}
+                        {% if codigo == 'vacina' %}💉{% endif %}
+                        {% if codigo == 'curativo' %}🩹{% endif %}
+                        {% if codigo == 'farmacia' %}💊{% endif %}
+                        {{ nome }}
+                    </th>
+                    {% endfor %}
+                    <th class="text-center px-3 py-3 text-gray-500 font-semibold">Total</th>
+                    <th class="text-center px-3 py-3 text-gray-500 font-semibold">Ausentes</th>
+                    <th class="text-center px-3 py-3 text-gray-500 font-semibold">Tempo médio</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for row in tabela %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-5 py-3 font-semibold text-gray-800">{{ row.upa.nome }}</td>
+                    {% for codigo, _ in tipos %}
+                    <td class="text-center px-3 py-3 text-gray-700">{{ row.tipos|get_item:codigo }}</td>
+                    {% endfor %}
+                    <td class="text-center px-3 py-3 font-bold text-primary">{{ row.total }}</td>
+                    <td class="text-center px-3 py-3 text-red-400">{{ row.ausentes }}</td>
+                    <td class="text-center px-3 py-3 text-gray-500">
+                        {% if row.tempo_medio %}{{ row.tempo_medio }} min{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const porTipo = {{ por_tipo_json }};
+const porUpa  = {{ por_upa_json }};
+const porHora = {{ por_hora_json }};
+const tendenciaLabels = {{ tendencia_labels }};
+const tendenciaData   = {{ tendencia_data }};
+
+const CORES = {
+    consulta: '#0077B6',
+    vacina:   '#06D6A0',
+    curativo: '#FFD166',
+    farmacia: '#EF476F',
+};
+const NOMES = {
+    consulta: 'Consulta',
+    vacina:   'Vacina',
+    curativo: 'Curativo',
+    farmacia: 'Farmácia',
+};
+
+// Donut por tipo
+new Chart(document.getElementById('chartTipo'), {
+    type: 'doughnut',
+    data: {
+        labels: Object.keys(porTipo).map(k => NOMES[k] || k),
+        datasets: [{
+            data: Object.values(porTipo),
+            backgroundColor: Object.keys(porTipo).map(k => CORES[k] || '#ccc'),
+            borderWidth: 2,
+            borderColor: '#fff',
+        }],
+    },
+    options: {
+        cutout: '65%',
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        maintainAspectRatio: false,
+    },
+});
+
+// Bar por UPA
+new Chart(document.getElementById('chartUpa'), {
+    type: 'bar',
+    data: {
+        labels: porUpa.map(r => r.upa__nome),
+        datasets: [{
+            label: 'Atendidos',
+            data: porUpa.map(r => r.n),
+            backgroundColor: '#0077B6',
+            borderRadius: 6,
+        }],
+    },
+    options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false }, ticks: { font: { size: 11 } } }, y: { ticks: { font: { size: 11 } } } },
+        maintainAspectRatio: false,
+    },
+});
+
+// Line por hora
+new Chart(document.getElementById('chartHora'), {
+    type: 'line',
+    data: {
+        labels: Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}h`),
+        datasets: [{
+            label: 'Atendimentos',
+            data: porHora,
+            borderColor: '#0077B6',
+            backgroundColor: 'rgba(0,119,182,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: true,
+            tension: 0.4,
+        }],
+    },
+    options: {
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+            y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } },
+        },
+        maintainAspectRatio: false,
+    },
+});
+
+// Tendência
+if (tendenciaLabels.length > 0) {
+    new Chart(document.getElementById('chartTendencia'), {
+        type: 'bar',
+        data: {
+            labels: tendenciaLabels,
+            datasets: [{
+                label: 'Atendidos',
+                data: tendenciaData,
+                backgroundColor: 'rgba(0,119,182,0.15)',
+                borderColor: '#0077B6',
+                borderWidth: 2,
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } },
+            },
+            maintainAspectRatio: false,
+        },
+    });
+}
+</script>
+{% endblock %}

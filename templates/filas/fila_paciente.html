@@ -1,0 +1,123 @@
+{% extends "filas/base.html" %}
+
+{% block title %}Sua Fila — CeciFácil{% endblock %}
+
+{% block content %}
+
+<!-- Alerta de chamada -->
+<div id="alerta-chamado" class="hidden fixed inset-0 bg-green-500 bg-opacity-97 z-50 flex flex-col items-center justify-center text-white text-center p-6">
+    <div class="relative flex items-center justify-center mb-6 w-32 h-32">
+        <div class="pulse-ring absolute w-24 h-24 bg-white rounded-full opacity-30"></div>
+        <div class="text-7xl z-10">🔔</div>
+    </div>
+    <h2 class="text-3xl font-bold mb-2">Você foi chamado!</h2>
+    <p class="text-xl mb-1">Senha: <span id="alerta-senha" class="font-bold"></span></p>
+    <p class="text-green-100 mt-2">Dirija-se ao atendimento agora.</p>
+    <button onclick="fecharAlerta()" class="mt-8 bg-white text-green-600 font-bold px-8 py-3 rounded-xl text-lg">
+        OK, entendido ✓
+    </button>
+</div>
+
+<div class="max-w-md mx-auto">
+
+    <!-- Sua senha -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6 text-center">
+        <p class="text-sm text-gray-500 mb-1">Sua senha</p>
+        <div class="text-5xl font-bold text-primary tracking-widest mb-3">
+            {{ atendimento.senha }}
+        </div>
+        <p class="text-sm text-gray-400">{{ atendimento.get_tipo_display }}</p>
+        <div class="mt-3">
+            <span class="inline-block px-4 py-1 rounded-full text-sm font-semibold
+                {% if atendimento.status == 'aguardando' %}bg-yellow-100 text-yellow-700
+                {% elif atendimento.status == 'chamado' %}bg-green-100 text-green-700
+                {% elif atendimento.status == 'atendido' %}bg-gray-100 text-gray-500
+                {% else %}bg-red-100 text-red-500{% endif %}">
+                {% if atendimento.status == 'aguardando' %}⏳ Aguardando
+                {% elif atendimento.status == 'chamado' %}✅ Chamado!
+                {% elif atendimento.status == 'atendido' %}✔ Atendido
+                {% else %}❌ Ausente{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <!-- Fila -->
+    {% if atendimento.status == 'aguardando' %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <p class="text-sm font-semibold text-gray-600 mb-3">Fila de {{ atendimento.get_tipo_display }}</p>
+        <div class="space-y-2">
+            {% for item in fila %}
+            <div class="flex items-center gap-3 p-3 rounded-xl
+                        {% if item.pk == atendimento.pk %}bg-blue-50 border-2 border-primary{% else %}bg-gray-50{% endif %}">
+                <span class="font-bold text-sm {% if item.pk == atendimento.pk %}text-primary{% else %}text-gray-400{% endif %}">
+                    {{ item.senha }}
+                </span>
+                {% if item.pk == atendimento.pk %}
+                <span class="text-xs text-primary font-semibold">← você</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <p class="text-center text-sm text-gray-400 mt-4">
+            Você é o <strong class="text-primary">{{ posicao }}º</strong> na fila
+        </p>
+        {% if tempo_medio %}
+        <p class="text-center text-xs text-gray-400 mt-1">
+            Tempo médio de espera hoje: <strong class="text-gray-500">{{ tempo_medio }} min</strong>
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <p class="text-center text-xs text-gray-400">📱 Mantenha esta página aberta para receber avisos.</p>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const meuId = "{{ atendimento.pk }}";
+    const tipo  = "{{ atendimento.tipo }}";
+    const upaSlug = "{{ upa.slug }}";
+
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${wsProto}://${window.location.host}/ws/fila/${upaSlug}/${tipo}/`);
+
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        if (data.tipo === 'senha_chamada' && data.atendimento_id === meuId) {
+            // Visual
+            document.getElementById('alerta-senha').textContent = data.senha;
+            document.getElementById('alerta-chamado').classList.remove('hidden');
+
+            // Sonoro via Web Audio API
+            try {
+                const ctx = new AudioContext();
+                [0, 0.3, 0.6].forEach(t => {
+                    const osc  = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.frequency.setValueAtTime(880, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(0.4, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+                    osc.start(ctx.currentTime + t);
+                    osc.stop(ctx.currentTime + t + 0.25);
+                });
+            } catch(e) {}
+        }
+    };
+
+    ws.onerror = function() {
+        setTimeout(() => location.reload(), 5000);
+    };
+
+    function fecharAlerta() {
+        document.getElementById('alerta-chamado').classList.add('hidden');
+        location.reload();
+    }
+
+    // Fallback: atualiza a cada 30s
+    setTimeout(() => location.reload(), 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CeciFácil{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0077B6',
+                        secondary: '#00B4D8',
+                        success: '#06D6A0',
+                        danger: '#EF476F',
+                        warning: '#FFD166',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .pulse-ring {
+            animation: pulse-ring 1.5s ease-out infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <header class="bg-primary text-white py-4 px-6 shadow-md">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">🏥</span>
+                <div>
+                    <h1 class="text-xl font-bold leading-tight">CeciFácil</h1>
+                    <p class="text-xs text-blue-200">{% block subtitulo %}Sistema de Filas{% endblock %}</p>
+                </div>
+            </div>
+            {% if user.is_authenticated %}
+            <div class="flex items-center gap-3 text-sm">
+                <span class="text-blue-200">{{ user.username }}</span>
+                <a href="{% url 'logout' %}"
+                   class="bg-white bg-opacity-20 hover:bg-opacity-30 px-3 py-1.5 rounded-lg font-semibold transition text-white text-xs">
+                    Sair
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

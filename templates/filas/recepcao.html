@@ -1,0 +1,386 @@
+{% extends "filas/base.html" %}
+
+{% block title %}Recepção — {{ upa.nome }}{% endblock %}
+{% block subtitulo %}{{ upa.nome }}{% endblock %}
+
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+    <h2 class="text-xl font-bold text-gray-800">Painel da Recepção</h2>
+    <div class="flex items-center gap-3">
+        <span class="text-sm text-gray-400 font-mono" id="hora-atual"></span>
+        <button onclick="abrirModalPresencial()"
+            class="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-700 transition">
+            + Cadastrar paciente
+        </button>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+{% for codigo, dados in filas.items %}
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+
+    <!-- Cabeçalho da fila -->
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50 rounded-t-2xl">
+        <span class="font-bold text-gray-700 text-sm">
+            {% if codigo == 'consulta' %}🩺{% endif %}
+            {% if codigo == 'vacina' %}💉{% endif %}
+            {% if codigo == 'curativo' %}🩹{% endif %}
+            {% if codigo == 'farmacia' %}💊{% endif %}
+            {% if codigo == 'prioridade' %}⚡{% endif %}
+            {{ dados.nome }}
+        </span>
+        <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-semibold">
+            {{ dados.aguardando|length }}
+        </span>
+    </div>
+
+    <!-- Agora -->
+    {% for chamado in dados.chamados %}
+    <div class="mx-3 mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
+        <p class="text-xs font-semibold mb-1 uppercase tracking-wide text-green-600">Agora</p>
+        <p class="font-bold text-lg leading-tight text-green-700">{{ chamado.senha }}</p>
+        <p class="text-gray-700 text-sm truncate {% if chamado.origem == 'presencial' %}font-bold{% endif %}">{{ chamado.nome }}</p>
+        {% if chamado.origem == 'presencial' %}<p class="text-xs text-purple-500 font-medium mb-1">📢 Chamar pelo nome</p>{% endif %}
+        <div class="flex gap-1 mt-2">
+            <form method="POST" action="{% url 'marcar_atendido' upa.slug chamado.pk %}" class="flex-1">
+                {% csrf_token %}
+                <button class="w-full bg-green-500 text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-green-600 transition">✔ Atendido</button>
+            </form>
+            <form method="POST" action="{% url 'marcar_ausente' upa.slug chamado.pk %}">
+                {% csrf_token %}
+                <button class="bg-red-400 text-white text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-red-500 transition" title="Remover">✗</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Não compareceram -->
+    {% for nc in dados.nao_compareceram %}
+    <div class="mx-3 mt-2 bg-orange-50 border border-orange-200 rounded-xl p-3">
+        <p class="text-xs font-semibold mb-1 uppercase tracking-wide text-orange-500">Não compareceu</p>
+        <p class="font-bold text-base leading-tight text-orange-700">{{ nc.senha }}</p>
+        <p class="text-gray-600 text-xs truncate">{{ nc.nome }}</p>
+        <div class="flex gap-1 mt-2">
+            <form method="POST" action="{% url 'reconvocar' upa.slug nc.pk %}" class="flex-1">
+                {% csrf_token %}
+                <button class="w-full bg-orange-400 text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-orange-500 transition">↩ Reconvocar</button>
+            </form>
+            <form method="POST" action="{% url 'marcar_ausente' upa.slug nc.pk %}">
+                {% csrf_token %}
+                <button class="bg-red-400 text-white text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-red-500 transition" title="Remover">✗</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Chamar próximo -->
+    <div class="px-3 mt-3">
+        <button onclick="chamarProximo('{{ codigo }}', this)"
+            class="w-full bg-primary text-white font-semibold py-2 rounded-xl text-sm transition
+                   hover:bg-blue-700 active:scale-95
+                   {% if not dados.aguardando %}opacity-40 cursor-not-allowed{% endif %}"
+            {% if not dados.aguardando %}disabled{% endif %}
+            data-url="{% url 'chamar_proximo' upa.slug codigo %}">
+            Chamar próximo
+        </button>
+    </div>
+
+    <!-- Lista de espera -->
+    <div class="flex-1 overflow-y-auto mt-2 pb-2" style="max-height: 320px;">
+        {% if dados.aguardando %}
+            {% for item in dados.aguardando %}
+            <div class="flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition
+                        {% if item.origem == 'presencial' %}bg-purple-50{% endif %}">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1">
+                        <span class="font-bold text-primary text-sm">{{ item.senha }}</span>
+                        {% if item.prioridade %}<span class="text-orange-500 text-xs">⚡</span>{% endif %}
+                        {% if item.origem == 'presencial' %}
+                        <span class="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-medium">presencial</span>
+                        {% endif %}
+                    </div>
+                    <span class="{% if item.origem == 'presencial' %}font-semibold text-purple-700{% else %}text-gray-600{% endif %} text-xs truncate block">
+                        {{ item.nome }}
+                        {% if item.origem == 'presencial' %}<span class="text-purple-400 font-normal"> ← chamar pelo nome</span>{% endif %}
+                    </span>
+                    {% if item.motivo_prioridade %}
+                    <span class="text-xs text-orange-500 font-medium">{{ item.get_motivo_prioridade_display }}</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-1 shrink-0 ml-2">
+                    <span class="text-xs text-gray-400">{{ item.criado_em|time:"H:i" }}</span>
+                    <form method="POST" action="{% url 'chamar_especifico' upa.slug item.pk %}">
+                        {% csrf_token %}
+                        <button type="submit"
+                            class="bg-blue-50 text-primary text-xs font-semibold px-2 py-1 rounded-lg hover:bg-blue-100 transition">
+                            ↑
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center py-8 text-gray-300">
+                <div class="text-3xl mb-1">✅</div>
+                <p class="text-xs">Fila vazia</p>
+            </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endfor %}
+</div>
+
+<!-- Modal chamada -->
+<div id="modal-chamada" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm text-center overflow-hidden">
+
+        <div id="chamada-header" class="bg-primary px-6 pt-8 pb-6">
+            <p class="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">Chamando</p>
+            <p id="chamada-senha" class="text-6xl font-bold text-white tracking-widest mb-2"></p>
+            <p id="chamada-nome" class="text-lg text-blue-100 font-medium"></p>
+            <p id="chamada-presencial" class="hidden text-xs text-yellow-300 mt-1 font-semibold">📢 Chamar pelo nome no corredor</p>
+        </div>
+
+        <div class="px-6 py-5 space-y-3">
+            <button onclick="chamarNovamente()"
+                class="w-full bg-blue-50 text-primary font-semibold py-3 rounded-xl hover:bg-blue-100 transition text-sm">
+                📢 Chamar de novo
+            </button>
+            <button onclick="confirmarAtendimento()"
+                class="w-full bg-green-500 text-white font-semibold py-3 rounded-xl hover:bg-green-600 transition text-sm">
+                ✔ Iniciando atendimento
+            </button>
+            <button onclick="fecharModalChamada()"
+                class="w-full bg-red-50 text-red-500 font-semibold py-3 rounded-xl hover:bg-red-100 transition text-sm">
+                ✗ Não compareceu
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<!-- Modal cadastro presencial -->
+<div id="modal-presencial" class="hidden fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+
+        <!-- Estado: formulário -->
+        <div id="modal-form">
+            <div class="px-6 pt-6 pb-2">
+                <h3 class="text-lg font-bold text-gray-800 mb-1">Cadastrar paciente</h3>
+                <p class="text-sm text-gray-500">Para pacientes sem celular</p>
+            </div>
+            <div class="px-6 pb-6 pt-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Nome completo</label>
+                    <input id="p-nome" type="text" placeholder="Ex: Maria da Silva"
+                        class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de atendimento</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        {% for codigo, nome in tipos %}
+                        <label class="cursor-pointer">
+                            <input type="radio" name="p-tipo" value="{{ codigo }}" class="peer hidden" />
+                            <div class="border-2 border-gray-200 rounded-xl p-2 text-center text-xs font-medium text-gray-600
+                                        peer-checked:border-primary peer-checked:bg-blue-50 peer-checked:text-primary
+                                        hover:border-gray-300 transition">
+                                {% if codigo == 'consulta' %}🩺{% endif %}
+                                {% if codigo == 'vacina' %}💉{% endif %}
+                                {% if codigo == 'curativo' %}🩹{% endif %}
+                                {% if codigo == 'farmacia' %}💊{% endif %}
+                                {% if codigo == 'prioridade' %}⚡{% endif %}
+                                {{ nome }}
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div>
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" id="p-prioridade" onchange="toggleMotivModal(this)" class="w-4 h-4 accent-primary" />
+                        <span class="text-sm font-semibold text-gray-700">⚡ Atendimento prioritário</span>
+                    </label>
+                </div>
+
+                <div id="campo-motivo-modal" class="hidden">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Motivo</label>
+                    <select id="p-motivo"
+                        class="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="">Selecione...</option>
+                        <option value="idoso">Idoso (60+)</option>
+                        <option value="gestante">Gestante</option>
+                        <option value="deficiencia">Pessoa com deficiência</option>
+                        <option value="crianca">Criança (menor de 5 anos)</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button onclick="fecharModal()"
+                        class="flex-1 border border-gray-200 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50 transition text-sm">
+                        Cancelar
+                    </button>
+                    <button onclick="cadastrarPresencial()"
+                        class="flex-1 bg-primary text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition text-sm">
+                        Cadastrar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estado: senha gerada -->
+        <div id="modal-senha" class="hidden px-6 py-8 text-center">
+            <div class="text-4xl mb-3">🎫</div>
+            <p class="text-sm text-gray-500 mb-1">Senha gerada</p>
+            <div id="senha-gerada" class="text-5xl font-bold text-primary tracking-widest mb-2"></div>
+            <p id="tipo-gerado" class="text-sm text-gray-500 mb-1"></p>
+            <p id="nome-gerado" class="text-sm font-medium text-gray-700 mb-6"></p>
+            <p class="text-xs text-gray-400 mb-6">Informe esta senha ao paciente e peça que aguarde.</p>
+            <button onclick="fecharModal()"
+                class="w-full bg-primary text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition">
+                Fechar
+            </button>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const csrfToken = '{{ csrf_token }}';
+    const registrarUrl = '{% url "registrar_presencial" upa.slug %}';
+
+    function tick() {
+        document.getElementById('hora-atual').textContent =
+            new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    let reloadTimer = null;
+
+    function agendarReload() {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+            if (document.getElementById('modal-presencial').classList.contains('hidden')) {
+                location.reload();
+            } else {
+                agendarReload();
+            }
+        }, 15000);
+    }
+
+    agendarReload();
+
+    function abrirModalPresencial() {
+        document.getElementById('modal-form').classList.remove('hidden');
+        document.getElementById('modal-senha').classList.add('hidden');
+        document.getElementById('p-nome').value = '';
+        document.querySelectorAll('input[name="p-tipo"]').forEach(r => r.checked = false);
+        document.getElementById('modal-presencial').classList.remove('hidden');
+        document.getElementById('p-nome').focus();
+    }
+
+    function fecharModal() {
+        document.getElementById('modal-presencial').classList.add('hidden');
+        location.reload();
+    }
+
+    let chamadaAtualId  = null;
+    let chamadaAtualUpa = null;
+
+    async function chamarProximo(tipo, btn) {
+        const url = btn.dataset.url;
+        btn.disabled = true;
+        btn.textContent = 'Chamando...';
+
+        const body = new FormData();
+        body.append('csrfmiddlewaretoken', csrfToken);
+
+        const resp = await fetch(url, { method: 'POST', body });
+        const data = await resp.json();
+
+        btn.disabled = false;
+        btn.textContent = 'Chamar próximo';
+
+        if (data.ok) {
+            chamadaAtualId  = data.pk;
+            chamadaAtualUpa = data.upa_slug;
+            abrirModalChamada(data.senha, data.nome, data.presencial);
+        } else {
+            alert(data.mensagem || 'Fila vazia.');
+        }
+    }
+
+    function abrirModalChamada(senha, nome, presencial) {
+        document.getElementById('chamada-senha').textContent = senha;
+        document.getElementById('chamada-nome').textContent = nome;
+        const aviso = document.getElementById('chamada-presencial');
+        presencial ? aviso.classList.remove('hidden') : aviso.classList.add('hidden');
+        document.getElementById('modal-chamada').classList.remove('hidden');
+        clearTimeout(reloadTimer);
+    }
+
+    function chamarNovamente() {
+        const header = document.getElementById('chamada-header');
+        header.classList.add('brightness-110');
+        header.style.transform = 'scale(1.02)';
+        header.style.transition = 'transform 0.15s';
+        setTimeout(() => { header.style.transform = ''; }, 300);
+    }
+
+    async function confirmarAtendimento() {
+        document.getElementById('modal-chamada').classList.add('hidden');
+        agendarReload();
+        location.reload();
+    }
+
+    async function fecharModalChamada() {
+        if (chamadaAtualId && chamadaAtualUpa) {
+            const url = `/${chamadaAtualUpa}/nao-compareceu/${chamadaAtualId}/`;
+            const body = new FormData();
+            body.append('csrfmiddlewaretoken', csrfToken);
+            await fetch(url, { method: 'POST', body });
+        }
+        document.getElementById('modal-chamada').classList.add('hidden');
+        agendarReload();
+        location.reload();
+    }
+
+    function toggleMotivModal(el) {
+        document.getElementById('campo-motivo-modal').classList.toggle('hidden', !el.checked);
+    }
+
+    async function cadastrarPresencial() {
+        const nome      = document.getElementById('p-nome').value.trim();
+        const tipo      = document.querySelector('input[name="p-tipo"]:checked')?.value;
+        const prior     = document.getElementById('p-prioridade').checked ? '1' : '0';
+        const motivo    = document.getElementById('p-motivo')?.value || '';
+        if (!nome || !tipo) {
+            alert('Preencha o nome e selecione o tipo de atendimento.');
+            return;
+        }
+        const body = new FormData();
+        body.append('nome', nome);
+        body.append('tipo', tipo);
+        body.append('prioridade', prior);
+        body.append('motivo_prioridade', motivo);
+        body.append('csrfmiddlewaretoken', csrfToken);
+
+        const resp = await fetch(registrarUrl, { method: 'POST', body });
+        const data = await resp.json();
+
+        if (data.ok) {
+            document.getElementById('senha-gerada').textContent = data.senha;
+            document.getElementById('tipo-gerado').textContent = data.tipo;
+            document.getElementById('nome-gerado').textContent = data.nome;
+            document.getElementById('modal-form').classList.add('hidden');
+            document.getElementById('modal-senha').classList.remove('hidden');
+        }
+    }
+</script>
+{% endblock %}
